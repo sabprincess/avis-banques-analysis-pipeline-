@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# dbt
+target/
+logs/
+dbt_packages/
+
+# Airflow
+logs/
+
+# Environnements
+.env
+
+# Fichiers temporaires / éditeurs
+*.save
+*.swp
+nano.save
+Untitled.ipynb
