@@ -1,0 +1,120 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.utils.dates import days_ago
+import googlemaps
+import psycopg2
+import pandas as pd
+import time
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.utils.dates import days_ago
+import googlemaps
+import psycopg2
+import pandas as pd
+import time
+# ma Clé API Google Maps
+API_KEY = "AIzaSyACo0eRv5pDIiaJ7pe1_W7qkVg8A4I_yTM"
+
+#  Connexion à Google Maps
+gmaps = googlemaps.Client(key=API_KEY)
+
+#  Paramètres PostgreSQL
+DB_PARAMS = {
+    "dbname": "banques_maroc",
+    "user": "postgres",
+    "host": "localhost",
+    "port": "5432"
+}
+
+# Liste des banques marocaines
+BANQUES = [
+    "Attijariwafa Bank",
+    "Banque Centrale Populaire",
+    "BMCE Bank of Africa",
+    "BMCI",
+    "CFG Bank",
+    "CIH Bank",
+    "Crédit Agricole du Maroc",
+    "Société Générale Maroc"
+]
+
+#  Fonction pour extraire les avis Google Maps
+def extract_google_reviews():
+    all_reviews = []
+    
+    for banque in BANQUES:
+        places_result = gmaps.places(query=f"{banque} Bank, Morocco")
+        
+        if places_result.get("results"):
+            for place in places_result["results"][:5]:  # Limite à 5 agences par banque
+                place_id = place["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["name", "formatted_address", "reviews"])
+                
+                if "reviews" in details["result"]:
+                    for review in details["result"]["reviews"]:
+                        all_reviews.append({
+                            "bank": banque,
+                            "branch": details["result"]["name"],
+                            "address": details["result"]["formatted_address"],
+                            "review": review["text"],
+                            "rating": review["rating"],
+                            "review_date": review["time"]
+                        })
+        
+        time.sleep(1)  # pour  de dépasser les limites de requêtes API
+
+    # Sauvegarder les avis en CSV
+    df = pd.DataFrame(all_reviews)
+    df.to_csv('/tmp/avis.csv', index=False)
+
+#  Fonction pour insérer les avis dans PostgreSQL
+def load_data_to_db():
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+
+    df = pd.read_csv('/tmp/avis.csv')
+
+    for _, row in df.iterrows():
+        # Vérifier si la banque existe
+        cur.execute("SELECT id FROM banques WHERE nom = %s", (row["bank"],))
+        bank = cur.fetchone()
+
+        if not bank:
+            cur.execute("INSERT INTO banques (nom) VALUES (%s) RETURNING id", (row["bank"],))
+            bank_id = cur.fetchone()[0]
+        else:
+            bank_id = bank[0]
+
+        # Insérer l'avis dans la table `avis`
+        cur.execute("""
+            INSERT INTO avis (bank_id, branch, address, review, rating, review_date)
+            VALUES (%s, %s, %s, %s, %s, to_timestamp(%s))
+        """, (bank_id, row["branch"], row["address"], row["review"], row["rating"], row["review_date"]))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Définition du DAG pour collecter les donnees weekly
+dag = DAG(
+    "dag_google_reviews",
+    schedule_interval="0 0 * * 0",  # Chaque dimanche à minuit
+   'start_date': pendulum.today('UTC').add(days=-1),  # Remplace days_ago(1),
+    catchup=False
+)
+
+# Opérateurs Airflow
+extract_task = PythonOperator(
+    task_id="extract_google_reviews",
+    python_callable=extract_google_reviews,
+    dag=dag
+)
+
+load_task = PythonOperator(
+    task_id="load_data_to_db",
+    python_callable=load_data_to_db,
+    dag=dag
+)
+
+# Dépendances des tâches
+extract_task >> load_task

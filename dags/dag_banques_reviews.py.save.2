@@ -1,0 +1,112 @@
+from airflow.utils.dates import days_ago
+import googlemaps
+import psycopg2
+import pandas as pd
+import time
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.utils.dates import days_ago
+import googlemaps
+import psycopg2
+import pandas as pd
+import time
+import pendulum
+import json
+
+start_date = pendulum.today('UTC').add(days=-1)
+
+# ma Clé API Google Maps
+API_KEY =  "AIzaSyARCTUfbIUAUUxFbL6z_ZnB30BVLG5anLw"
+
+def extract_reviews():
+    """ Fonction pour extraire les avis Google Maps des banques marocaines """
+    gmaps = googlemaps.Client(key=API_KEY)
+    avis_extraits = []
+    BANQUES = [
+    "Attijariwafa Bank", "Banque Centrale Populaire", "BMCE Bank of Africa",
+    "BMCI", "CFG Bank", "CIH Bank", "Crédit Agricole du Maroc", "Société Générale Maroc"
+    ]
+    for banque in BANQUES:
+        places = gmaps.places(query=banque + " Maroc")
+        
+        if "results" in places:
+            for place in places["results"]:
+                place_id = place["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["reviews"])
+                
+                if "result" in details and "reviews" in details["result"]:
+                    for review in details["result"]["reviews"]:
+                        avis_extraits.append({
+                            "banque_id": place_id,  # Lié à la banque
+                            "note": review.get("rating"),
+                            "date_review": review.get("time"),
+                            "auteur": review.get("author_name"),
+
+    # Sauvegarde des avis en JSOn 
+    with open("/home/sabrine123/airflow/data/avis_extraits.json", "w") as f:
+        json.dump(avis_extraits, f, indent=4)
+
+    return avis_extraits
+
+def load_to_postgres():  
+
+    # Charger les avis depuis le fichier JSON
+    import json
+    with open("/home/sabrine123/airflow/data/avis_extraits.json", "r") as f:
+        avis = json.load(f)
+
+    if not avis:
+        print("Aucun avis extrait.")
+        return
+
+    # Connexion PostgreSQL
+    conn = psycopg2.connect(
+        dbname="banques_maroc",
+        user="postgres",
+        host="localhost",
+        port="5433"
+    )
+    cur = conn.cursor()
+
+    for review in avis:
+        cur.execute("""
+            INSERT INTO avis (banque_id, note, date_review, auteur, commentaire)
+            VALUES (%s, %s, TO_TIMESTAMP(%s), %s, %s)
+        """, (
+            review["banque_id"],
+            review["note"],
+            review["date_review"],
+            review["auteur"],
+            review["commentaire"]
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("✅ Insertion terminée avec succès.")
+
+# Définition du DAG pour collecter les donnees weekly 
+with DAG(
+    dag_id="dag_google_reviews",
+    schedule_interval='@weekly',  # Chaque dimanche à minuit
+    start_date=days_ago(1),
+    catchup=False
+    
+) as dag:
+# Opérateurs Airflow
+     extract_task = PythonOperator(
+        task_id="extract_reviews",
+        python_callable=extract_reviews,
+
+     )
+
+     load_task = PythonOperator(
+        task_id="load_to_postgres",
+        python_callable=load_to_postgres,
+        dag=dag
+      )
+pass
+
+# Dépendances des tâches
+extract_task >> load_task
+

@@ -1,0 +1,52 @@
+version: 2
+
+sources:
+  - name: raw_data
+    schema: public
+    tables:
+      - name: banquees
+        description: "Table brute contenant les informations des agences bancaires"
+        columns:
+          - name: place_id
+            description: "Identifiant unique de la banque"
+            tests: [not_null, unique]
+
+          - name: bank_name
+            description: "Nom de la banque"
+          - name: branch_name
+            description: "Nom de l'agence ou de la succursale"
+
+          - name: address
+            description: "Adresse de l'agence"
+
+          - name: latitude
+            description: "Coordonnée géographique - latitude"
+
+          - name: longitude
+            description: "Coordonnée géographique - longitude"
+
+      - name: avis_enrichi
+        description: "Table contenant les avis enrichis (sentiment, langue, topic)"
+        columns:
+          - name: id
+            description: "Identifiant de l'avis"
+            tests: [not_null, unique]
+
+          - name: banque_id
+            description: "Identifiant de la banque concernée"
+
+          - name: commentaire
+            description: "Commentaire textuel du client"
+
+          - name: date_review
+            description: "Date de publication de l'avis"
+          
+          - name: sentiment
+            description: "Sentiment détecté (positif, négatif, neutre)"
+
+          - name: langue
+            description: "Langue du commentaire"
+
+          - name: topic
+            description: "Sujet principal du commentaire"
+

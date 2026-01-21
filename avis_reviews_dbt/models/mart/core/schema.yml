@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: fact_reviews
+    description: >
+      Table de faits centralisant les avis clients enrichis et nettoyés, avec les identifiants associés aux banques, agences, localisations et sentiments.
+    columns:
+      - name: review_id
+        description: Identifiant unique de l'avis.
+        tests:
+          - unique
+          - not_null
+
+      - name: note
+        description: Note attribuée par le client (échelle 1 à 5).
+
+      - name: date_review
+        description: Date de publication de l'avis.
+
+      - name: bank_id
+        description: Identifiant de la banque associée.
+
+      - name: branch_id
+        description: Identifiant de la succursale (agence) liée à l'avis.
+
+      - name: location_id
+        description: Identifiant géographique de la localisation de la banque.
+
+      - name: sentiment_id
+        description: Identifiant du sentiment associé à l'avis.

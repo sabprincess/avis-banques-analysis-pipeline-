@@ -1,0 +1,139 @@
+import pendulum
+import googlemaps
+import psycopg2
+import json
+from datetime import datetime
+
+# ===== Clé API Google Maps =====
+# ====== Fonctions Python ======
+
+def extract_reviews():
+    API_KEY = "AIzaSyARCTUfbIUAUUxFbL6z_ZnB30BVLG5anLw"
+    """Extrait les avis Google Maps des banques marocaines"""
+    gmaps = googlemaps.Client(key=API_KEY)
+    avis_extraits = []
+
+    BANQUES = [
+        "Attijariwafa Bank", "Banque Centrale Populaire", "BMCE Bank of Africa",
+        "BMCI", "CFG Bank", "CIH Bank", "Crédit Agricole du Maroc", "Société Générale Maroc"
+    ]
+
+    for banque in BANQUES:
+        places = gmaps.places(query=banque + " Maroc")
+        if "results" in places:
+            for place in places["results"]:
+                place_id = place["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["reviews"])
+                if "result" in details and "reviews" in details["result"]:
+                    for review in details["result"]["reviews"]:
+                        avis_extraits.append({
+                            "banque_id": place_id,
+                            "note": review.get("rating"),
+                            "date_review": review.get("time"),
+                            "auteur": review.get("author_name"),
+                            "commentaire": review.get("text")
+                        })
+
+    # 🔸 Sauvegarder dans le dossier `~/airflow/data/`
+    with open("/home/sabrine123/airflow/data/avis.json", "w") as f:
+        json.dump(avis_extraits, f, indent=4)
+
+    print(f"✅ {len(avis_extraits)} avis extraits et sauvegardés.")
+def load_banques_to_postgres(**context):
+   
+    conn = psycopg2.connect(
+        dbname="banques_maroc",
+        user="postgres",
+        host="localhost",
+        port="5433"
+    )
+    cur = conn.cursor()
+
+    # Reprendre les avis extraits pour obtenir les banques
+    with open("/home/sabrine123/airflow/data/avis.json", "r") as f:
+        avis = json.load(f)
+
+    banques = {}
+    for review in avis:
+        banques[review["banque_id"]] = review.get("nom_banque", "Banque inconnue")  # si tu as stocké le nom, sinon à adapter
+
+    for banque_id, nom in banques.items():
+        cur.execute(
+            "INSERT INTO banque (id, nom) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING",
+            (banque_id, nom)
+        )
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def load_to_postgres():
+    """Charge les avis du JSON dans PostgreSQL"""
+
+    with open("/home/sabrine123/airflow/data/avis.json", "r") as f:
+        avis = json.load(f)
+
+    if not avis:
+        print("❌ Aucun avis à insérer.")
+        return
+
+    conn = psycopg2.connect(
+        dbname="banques_maroc",
+        user="postgres",
+        host="localhost",
+        port="5433"
+    )
+    cur = conn.cursor()
+
+    for review in avis:
+        cur.execute("""
+            INSERT INTO avis (banque_id, note, date_review, auteur, commentaire)
+            VALUES (%s, %s, TO_TIMESTAMP(%s), %s, %s)
+        """, (
+            review["banque_id"],
+            review["note"],
+            review["date_review"],
+            review["auteur"],
+            review["commentaire"]
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("✅ Insertion PostgreSQL réussie.")
+
+
+# ====== Définition du DAG ======
+default_args = {
+    'owner': 'airflow',
+    'retries': 1,
+}
+
+with DAG(
+    dag_id="dag_google_reviews",
+    default_args=default_args,
+    schedule='@daily',
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    tags=["banques", "googlemaps", "avis"]
+) as dag:
+
+    extract_task = PythonOperator(
+        task_id="extract_reviews",
+        python_callable=extract_reviews
+    )
+
+    load_banques = PythonOperator(
+        task_id="load_banques_to_postgres",
+        python_callable=load_banques_to_postgres
+    )
+
+    load_task = PythonOperator(
+        task_id="load_to_postgres",
+        python_callable=load_to_postgres
+    )
+
+    # Dépendances des tâches
+    extract_task >> load_banques >> load_task
+
