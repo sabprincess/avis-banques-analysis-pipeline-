@@ -26,8 +26,7 @@ sur des banques à des fins décisionnelles (qualité de service, satisfaction, 
 - Table de faits : `fact_reviews`
 - Dimensions :
   - `dim_bank`
-  - `dim_date`
-  - `dim_customer`
+  - `dim_agence`
   - `dim_sentiment`
 
 ## 📊 Indicateurs clés
