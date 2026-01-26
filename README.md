@@ -26,8 +26,9 @@ sur des banques à des fins décisionnelles (qualité de service, satisfaction, 
 - Table de faits : `fact_reviews`
 - Dimensions :
   - `dim_bank`
-  - `dim_agence`
+  - `dim_branch`
   - `dim_sentiment`
+  - `dim_location`
 
 ## 📊 Indicateurs clés
 - Score moyen par banque
